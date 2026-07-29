@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feature Flag Engine</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0C0C0F;
+    --surface:   #141418;
+    --surface2:  #1C1C22;
+    --border:    #2A2A35;
+    --text:      #E8E8F0;
+    --muted:     #6B6B80;
+    --accent:    #7B6EF6;
+    --accent2:   #4ECDC4;
+    --danger:    #FF6B6B;
+    --success:   #51CF66;
+    --warning:   #FFD43B;
+    --font:      'IBM Plex Sans', sans-serif;
+    --mono:      'IBM Plex Mono', monospace;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  /* Layout */
+  .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 28px 0; display: flex; flex-direction: column; }
+  .main { padding: 32px 40px; overflow-y: auto; }
+
+  /* Sidebar */
+  .logo { padding: 0 24px 32px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .logo-mark { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 4px; }
+  .logo-name { font-size: 15px; font-weight: 600; color: var(--text); }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 24px; font-size: 13px; color: var(--muted); cursor: pointer; transition: all 0.15s; border-left: 2px solid transparent; }
+  .nav-item:hover { color: var(--text); background: var(--surface2); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(123,110,246,0.08); }
+  .nav-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .sidebar-footer { margin-top: auto; padding: 16px 24px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+  /* Header */
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
+  .page-title { font-size: 22px; font-weight: 600; }
+  .page-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
+
+  /* Stat cards */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 32px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--mono); margin-bottom: 8px; }
+  .stat-value { font-size: 26px; font-weight: 600; font-family: var(--mono); }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.success { color: var(--success); }
+  .stat-value.danger { color: var(--danger); }
+  .stat-value.warning { color: var(--warning); }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; font-family: var(--font); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #6a5ee0; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+  .btn-danger { background: rgba(255,107,107,0.15); color: var(--danger); border: 1px solid rgba(255,107,107,0.3); }
+  .btn-danger:hover { background: rgba(255,107,107,0.25); }
+  .btn-success { background: rgba(81,207,102,0.15); color: var(--success); border: 1px solid rgba(81,207,102,0.3); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  /* Flag cards */
+  .flags-grid { display: flex; flex-direction: column; gap: 12px; }
+  .flag-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; transition: border-color 0.2s; }
+  .flag-card:hover { border-color: var(--accent); }
+  .flag-card.enabled { border-left: 3px solid var(--success); }
+  .flag-card.disabled { border-left: 3px solid var(--border); }
+  .flag-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .flag-name { font-family: var(--mono); font-size: 14px; font-weight: 500; color: var(--text); }
+  .flag-actions { display: flex; gap: 8px; align-items: center; }
+  .flag-meta { display: flex; gap: 20px; }
+  .flag-meta-item { font-size: 12px; color: var(--muted); }
+  .flag-meta-item strong { color: var(--text); font-weight: 500; }
+
+  /* Toggle */
+  .toggle { width: 36px; height: 20px; border-radius: 10px; border: none; cursor: pointer; position: relative; transition: background 0.2s; }
+  .toggle.on { background: var(--success); }
+  .toggle.off { background: var(--border); }
+  .toggle::after { content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: white; top: 3px; transition: left 0.2s; }
+  .toggle.on::after { left: 19px; }
+  .toggle.off::after { left: 3px; }
+
+  /* Badge */
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 99px; font-family: var(--mono); font-weight: 500; }
+  .badge-on { background: rgba(81,207,102,0.15); color: var(--success); }
+  .badge-off { background: rgba(107,107,128,0.2); color: var(--muted); }
+
+  /* Progress bar */
+  .pct-bar { height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 10px; overflow: hidden; }
+  .pct-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+
+  /* Modal */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 480px; max-width: 95vw; }
+  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+  .form-group { margin-bottom: 16px; }
+  .form-label { font-size: 12px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; display: block; }
+  .form-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; color: var(--text); font-size: 13px; font-family: var(--font); outline: none; }
+  .form-input:focus { border-color: var(--accent); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .slider-wrap { display: flex; align-items: center; gap: 12px; }
+  .slider { flex: 1; accent-color: var(--accent); }
+  .slider-val { font-family: var(--mono); font-size: 13px; color: var(--accent); width: 36px; text-align: right; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+  /* Test panel */
+  .test-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-top: 28px; }
+  .test-title { font-size: 14px; font-weight: 500; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .test-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+  .result-box { margin-top: 14px; padding: 12px 16px; border-radius: 8px; font-family: var(--mono); font-size: 13px; }
+  .result-true { background: rgba(81,207,102,0.1); border: 1px solid rgba(81,207,102,0.3); color: var(--success); }
+  .result-false { background: rgba(107,107,128,0.1); border: 1px solid var(--border); color: var(--muted); }
+
+  /* Chart */
+  .chart-section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-top: 28px; }
+  .chart-title { font-size: 14px; font-weight: 500; margin-bottom: 18px; }
+
+  /* Audit */
+  .audit-list { display: flex; flex-direction: column; gap: 8px; }
+  .audit-item { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: var(--surface2); border-radius: 8px; font-size: 12px; }
+  .audit-action { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+  .audit-CREATE { background: rgba(81,207,102,0.15); color: var(--success); }
+  .audit-UPDATE { background: rgba(123,110,246,0.15); color: var(--accent); }
+  .audit-DELETE { background: rgba(255,107,107,0.15); color: var(--danger); }
+  .audit-flag { font-family: var(--mono); color: var(--text); flex: 1; }
+  .audit-time { color: var(--muted); }
+
+  /* Loading */
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty { text-align: center; padding: 48px; color: var(--muted); font-size: 14px; }
+  .empty-icon { font-size: 32px; margin-bottom: 12px; }
+
+  .tag-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .tag { font-size: 11px; background: rgba(123,110,246,0.12); color: var(--accent); padding: 2px 8px; border-radius: 4px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+// ← Replace with your API Gateway URL
+const API_BASE = 'https://uiqrb6enf0.execute-api.ap-south-1.amazonaws.com/prod';
+
+function App() {
+  const [page, setPage] = useState('flags');
+  const [flags, setFlags] = useState([]);
+  const [audit, setAudit] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editFlag, setEditFlag] = useState(null);
+  const [testResult, setTestResult] = useState(null);
+  const [testForm, setTestForm] = useState({ flag_id: '', user_id: '', region: 'ap-south-1' });
+
+  const fetchFlags = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/flags`);
+      const data = await res.json();
+      setFlags(Array.isArray(data) ? data : []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }, []);
+
+  const fetchAudit = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/flags`);
+      // audit comes from DynamoDB scan for now
+    } catch(e) {}
+  }, []);
+
+  useEffect(() => { fetchFlags(); }, [fetchFlags]);
+
+  const toggleFlag = async (flag) => {
+    const updated = { ...flag, enabled: flag.enabled === 'True' ? 'false' : 'true' };
+    await fetch(`${API_BASE}/flags/${flag.flag_id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: flag.enabled !== 'True' })
+    });
+    fetchFlags();
+  };
+
+  const deleteFlag = async (flag_id) => {
+    if (!confirm(`Delete flag "${flag_id}"?`)) return;
+    await fetch(`${API_BASE}/flags/${flag_id}`, { method: 'DELETE' });
+    fetchFlags();
+  };
+
+  const testEvaluation = async () => {
+    if (!testForm.flag_id || !testForm.user_id) return;
+    setTestResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testForm)
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch(e) { console.error(e); }
+  };
+
+  const enabledCount = flags.filter(f => f.enabled === 'True').length;
+  const avgPct = flags.length ? Math.round(flags.reduce((s, f) => s + parseInt(f.percentage || 0), 0) / flags.length) : 0;
+
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="logo">
+          <div className="logo-mark">Feature Flags</div>
+          <div className="logo-name">Control Plane</div>
+        </div>
+        {[
+          { id: 'flags', label: 'Flags' },
+          { id: 'test', label: 'Test Evaluator' },
+          { id: 'audit', label: 'Audit Log' },
+        ].map(item => (
+          <div key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => setPage(item.id)}>
+            <span className="nav-dot"></span>
+            {item.label}
+          </div>
+        ))}
+        <div className="sidebar-footer">
+          ap-south-1 · free tier
+        </div>
+      </aside>
+
+      <main className="main">
+        {page === 'flags' && (
+          <>
+            <div className="page-header">
+              <div>
+                <div className="page-title">Feature Flags</div>
+                <div className="page-sub">{flags.length} flags · {enabledCount} active</div>
+              </div>
+              <button className="btn btn-primary" onClick={() => { setEditFlag(null); setShowModal(true); }}>
+                + New Flag
+              </button>
+            </div>
+
+            <div className="stats">
+              <div className="stat">
+                <div className="stat-label">Total Flags</div>
+                <div className="stat-value accent">{flags.length}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Active</div>
+                <div className="stat-value success">{enabledCount}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Disabled</div>
+                <div className="stat-value">{flags.length - enabledCount}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Avg Rollout</div>
+                <div className="stat-value warning">{avgPct}%</div>
+              </div>
+            </div>
+
+            {loading ? (
+              <div style={{display:'flex',justifyContent:'center',padding:'48px'}}>
+                <div className="spinner"></div>
+              </div>
+            ) : flags.length === 0 ? (
+              <div className="empty">
+                <div className="empty-icon">⚑</div>
+                No flags yet. Create your first flag.
+              </div>
+            ) : (
+              <div className="flags-grid">
+                {flags.map(flag => (
+                  <div key={flag.flag_id} className={`flag-card ${flag.enabled === 'True' ? 'enabled' : 'disabled'}`}>
+                    <div className="flag-top">
+                      <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                        <span className="flag-name">{flag.flag_id}</span>
+                        <span className={`badge ${flag.enabled === 'True' ? 'badge-on' : 'badge-off'}`}>
+                          {flag.enabled === 'True' ? 'ENABLED' : 'DISABLED'}
+                        </span>
+                      </div>
+                      <div className="flag-actions">
+                        <button className="toggle" style={{width:'36px',height:'20px',borderRadius:'10px',border:'none',cursor:'pointer',position:'relative',background: flag.enabled === 'True' ? 'var(--success)' : 'var(--border)'}}
+                          onClick={() => toggleFlag(flag)}>
+                          <span style={{position:'absolute',width:'14px',height:'14px',borderRadius:'50%',background:'white',top:'3px',left: flag.enabled === 'True' ? '19px' : '3px',transition:'left 0.2s'}}></span>
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditFlag(flag); setShowModal(true); }}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => deleteFlag(flag.flag_id)}>Delete</button>
+                      </div>
+                    </div>
+                    <div className="flag-meta">
+                      <div className="flag-meta-item">Rollout <strong>{flag.percentage}%</strong></div>
+                      <div className="flag-meta-item">Error threshold <strong>{flag.rollback_threshold?.error_rate}%</strong></div>
+                      <div className="flag-meta-item">Updated <strong>{flag.updated_at?.slice(0,10)}</strong></div>
+                    </div>
+                    {flag.target_users?.length > 0 && (
+                      <div className="tag-list">
+                        {flag.target_users.map(u => <span key={u} className="tag">{u}</span>)}
+                      </div>
+                    )}
+                    {flag.target_regions?.length > 0 && (
+                      <div className="tag-list">
+                        {flag.target_regions.map(r => <span key={r} className="tag">📍 {r}</span>)}
+                      </div>
+                    )}
+                    <div className="pct-bar">
+                      <div className="pct-fill" style={{width: `${flag.percentage}%`}}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {page === 'test' && (
+          <>
+            <div className="page-header">
+              <div>
+                <div className="page-title">Test Evaluator</div>
+                <div className="page-sub">Check what result a specific user gets for any flag</div>
+              </div>
+            </div>
+            <div className="test-panel">
+              <div className="test-title">⚡ Evaluate a flag</div>
+              <div className="test-row">
+                <div className="form-group" style={{margin:0}}>
+                  <label className="form-label">Flag ID</label>
+                  <select className="form-input" value={testForm.flag_id} onChange={e => setTestForm({...testForm, flag_id: e.target.value})}>
+                    <option value="">Select a flag...</option>
+                    {flags.map(f => <option key={f.flag_id} value={f.flag_id}>{f.flag_id}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{margin:0}}>
+                  <label className="form-label">User ID</label>
+                  <input className="form-input" placeholder="e.g. user_kajal_42" value={testForm.user_id} onChange={e => setTestForm({...testForm, user_id: e.target.value})} />
+                </div>
+                <button className="btn btn-primary" onClick={testEvaluation}>Evaluate</button>
+              </div>
+              <div className="form-group" style={{marginTop:'12px',marginBottom:0}}>
+                <label className="form-label">Region</label>
+                <select className="form-input" value={testForm.region} onChange={e => setTestForm({...testForm, region: e.target.value})}>
+                  <option>ap-south-1</option>
+                  <option>us-east-1</option>
+                  <option>eu-west-1</option>
+                </select>
+              </div>
+              {testResult && (
+                <div className={`result-box ${testResult.result ? 'result-true' : 'result-false'}`}>
+                  <div style={{marginBottom:'6px',fontWeight:'500'}}>{testResult.result ? '✓ Flag is ON for this user' : '✗ Flag is OFF for this user'}</div>
+                  <div style={{opacity:0.7}}>flag: {testResult.flag_id} · user: {testResult.user_id} · region: {testResult.region}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="chart-section">
+              <div className="chart-title">Rollout Distribution — All Flags</div>
+              {flags.length > 0 ? (
+  <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+    {flags.map(f => (
+      <div key={f.flag_id} style={{display:'flex',alignItems:'center',gap:'12px'}}>
+        <span style={{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--muted)',width:'160px',flexShrink:0}}>{f.flag_id}</span>
+        <div style={{flex:1,background:'var(--surface2)',borderRadius:'4px',height:'8px'}}>
+          <div style={{width:`${f.percentage}%`,background:'var(--accent)',height:'8px',borderRadius:'4px',transition:'width 0.3s'}}></div>
+        </div>
+        <span style={{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--accent)',width:'36px',textAlign:'right'}}>{f.percentage}%</span>
+      </div>
+    ))}
+  </div>
+) : <div className="empty">No flags to chart</div>}
+            </div>
+          </>
+        )}
+
+        {page === 'audit' && (
+          <>
+            <div className="page-header">
+              <div>
+                <div className="page-title">Audit Log</div>
+                <div className="page-sub">Every flag change recorded</div>
+              </div>
+              <button className="btn btn-ghost" onClick={fetchFlags}>Refresh</button>
+            </div>
+            <div className="audit-list">
+              {flags.map(f => (
+                <div key={f.flag_id} className="audit-item">
+                  <span className={`audit-action audit-CREATE`}>CREATE</span>
+                  <span className="audit-flag">{f.flag_id}</span>
+                  <span style={{color:'var(--muted)',fontSize:'11px'}}>{f.enabled === 'True' ? '✓ enabled' : '○ disabled'} · {f.percentage}% rollout</span>
+                  <span className="audit-time">{f.created_at?.slice(0,16).replace('T',' ')}</span>
+                </div>
+              ))}
+              {flags.length === 0 && <div className="empty">No audit entries yet</div>}
+            </div>
+          </>
+        )}
+      </main>
+
+      {showModal && <FlagModal flag={editFlag} onClose={() => setShowModal(false)} onSave={() => { setShowModal(false); fetchFlags(); }} />}
+    </div>
+  );
+}
+
+function FlagModal({ flag, onClose, onSave }) {
+  const [form, setForm] = useState({
+    flag_id: flag?.flag_id || '',
+    enabled: flag?.enabled === 'True',
+    percentage: parseInt(flag?.percentage || 0),
+    target_users: (flag?.target_users || []).join(', '),
+    target_regions: (flag?.target_regions || []).join(', '),
+    error_rate: flag?.rollback_threshold?.error_rate || '5',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!form.flag_id.trim()) return;
+    setSaving(true);
+    const body = {
+      flag_id: form.flag_id.trim(),
+      enabled: form.enabled,
+      percentage: form.percentage,
+      target_users: form.target_users ? form.target_users.split(',').map(s=>s.trim()).filter(Boolean) : [],
+      target_regions: form.target_regions ? form.target_regions.split(',').map(s=>s.trim()).filter(Boolean) : [],
+      rollback_threshold: { error_rate: form.error_rate, latency_multiplier: '2' }
+    };
+    const method = flag ? 'PUT' : 'POST';
+    const url = flag ? `${API_BASE}/flags/${flag.flag_id}` : `${API_BASE}/flags`;
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    setSaving(false);
+    onSave();
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-title">{flag ? `Edit Flag: ${flag.flag_id}` : 'Create New Flag'}</div>
+
+        <div className="form-group">
+          <label className="form-label">Flag ID</label>
+          <input className="form-input" placeholder="e.g. new-checkout-ui" value={form.flag_id}
+            onChange={e => setForm({...form, flag_id: e.target.value})} disabled={!!flag} />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Rollout Percentage — {form.percentage}%</label>
+          <div className="slider-wrap">
+            <input type="range" className="slider" min="0" max="100" value={form.percentage}
+              onChange={e => setForm({...form, percentage: parseInt(e.target.value)})} style={{flex:1,accentColor:'var(--accent)'}} />
+            <span className="slider-val">{form.percentage}%</span>
+          </div>
+          <div className="pct-bar" style={{marginTop:'8px'}}>
+            <div className="pct-fill" style={{width:`${form.percentage}%`}}></div>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Target Users (comma-sep)</label>
+            <input className="form-input" placeholder="user_a, user_b" value={form.target_users}
+              onChange={e => setForm({...form, target_users: e.target.value})} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Target Regions (comma-sep)</label>
+            <input className="form-input" placeholder="ap-south-1, us-east-1" value={form.target_regions}
+              onChange={e => setForm({...form, target_regions: e.target.value})} />
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Auto-rollback Error Rate Threshold (%)</label>
+          <input className="form-input" type="number" min="1" max="100" value={form.error_rate}
+            onChange={e => setForm({...form, error_rate: e.target.value})} />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label" style={{display:'flex',alignItems:'center',gap:'10px',cursor:'pointer'}}>
+            <input type="checkbox" checked={form.enabled} onChange={e => setForm({...form, enabled: e.target.checked})}
+              style={{accentColor:'var(--accent)',width:'14px',height:'14px'}} />
+            Enable flag immediately
+          </label>
+        </div>
+
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? 'Saving...' : flag ? 'Save changes' : 'Create flag'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
